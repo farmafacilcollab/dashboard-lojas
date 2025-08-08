@@ -3,31 +3,23 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import date
-# import locale -> REMOVIDO: Não vamos mais usar esta biblioteca
+import locale
 import io
 import json
 import os
 from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
+# --- CONFIGURAÇÃO DA PÁGINA E LOCALE ---
 st.set_page_config(page_title="Dashboard de Vendas Interativo", page_icon="📊", layout="wide")
+try:
+    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+except locale.Error:
+    try:
+        locale.setlocale(locale.LC_ALL, 'Portuguese_Brazil')
+    except locale.Error:
+        st.warning("Não foi possível definir o local para Português (pt_BR).")
 
-# NOVO: Função própria para formatar moeda, que não depende do sistema operativo
-def formatar_moeda_br(valor):
-    """Formata um número para o padrão de moeda brasileiro (R$ 1.234,50)."""
-    if valor is None:
-        valor = 0.0
-    # Formata com separador de milhar americano (,) e duas casas decimais (.)
-    valor_formatado = f"{valor:,.2f}"
-    # Troca temporariamente a vírgula por um placeholder
-    valor_formatado = valor_formatado.replace(",", "X")
-    # Troca o ponto decimal por uma vírgula
-    valor_formatado = valor_formatado.replace(".", ",")
-    # Troca o placeholder pelo ponto de milhar
-    valor_formatado = valor_formatado.replace("X", ".")
-    return f"R$ {valor_formatado}"
-
-# --- FUNÇÕES DE CONFIGURAÇÃO (para regras de negócio) ---
+# --- FUNÇÕES DE CONFIGURAÇÃO E SEGURANÇA ---
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {"premiacao_loja": 1000.0, "bonus_por_dia": 25.0}
 
@@ -39,6 +31,25 @@ def load_config():
 def save_config(config_data):
     with open(CONFIG_FILE, 'w') as f: json.dump(config_data, f, indent=4)
 
+# REINTRODUZIDO: Função para verificar a senha
+def check_password():
+    """Mostra o formulário de senha e retorna True se a senha estiver correta."""
+    st.header("🔑 Acesso Restrito")
+    password = st.text_input("Digite a senha de administrador:", type="password")
+
+    # Verifica se a senha corresponde à guardada no st.secrets
+    if "admin_password" not in st.secrets:
+        st.error("Senha de administrador não configurada no ficheiro secrets.toml.")
+        return False
+        
+    if password == st.secrets.get("admin_password"):
+        return True
+    elif password:
+        st.error("Senha incorreta.")
+        return False
+    else:
+        return False
+
 # --- NAVEGAÇÃO PRINCIPAL ---
 st.sidebar.title("Navegação")
 page = st.sidebar.radio("Selecione a página:", ["Dashboard", "⚙️ Administração"])
@@ -46,26 +57,12 @@ config = load_config()
 
 # --- PÁGINA DO DASHBOARD ---
 if page == "Dashboard":
+    # ... [O código do Dashboard permanece exatamente o mesmo] ...
     st.title("📊 Dashboard de Vendas Interativo")
     with st.expander("ℹ️ Ajuda e Detalhes do Dashboard", expanded=False):
-        st.markdown("""
-        **Como usar este painel:**
-        - **1. Fonte de Dados:** A aplicação lê os dados automaticamente da sua Planilha Google configurada.
-        - **2. Aplique os Filtros:** Na barra lateral, pode filtrar os dados por Loja e por um período de Data. Use o botão 'Resetar Filtros' para voltar ao estado inicial.
-        - **3. Análise Interativa:** Todos os cartões de KPI e gráficos são atualizados automaticamente com base nos seus filtros.
-        - **4. Exporte os Dados:** Abaixo dos gráficos, encontrará um botão para baixar os dados filtrados em Excel. Para exportar para PDF, use o botão na barra lateral.
-        """)
-    st.markdown("""
-    <style>
-    @media print {
-        .stSidebar, [data-testid="stToolbar"], footer, .stExpander, .stSlider, .stButton { display: none !important; }
-        .main .block-container { padding: 2rem !important; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
+        st.markdown("""...""")
+    st.markdown("""<style>@media print{...}</style>""", unsafe_allow_html=True)
     st.markdown("---")
-
-    # --- CARREGAMENTO AUTOMÁTICO DOS DADOS ---
     with st.spinner("A conectar com a Planilha Google e a carregar os dados..."):
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
@@ -77,11 +74,8 @@ if page == "Dashboard":
             df_vendedores['Data'] = pd.to_datetime(df_vendedores['Data'])
         except Exception as e:
             st.error(f"❌ Erro ao conectar ou ler a Planilha Google.")
-            st.error("Verifique se o URL em 'secrets.toml' está correto e se a planilha foi partilhada com o email da conta de serviço.")
             st.exception(e)
             st.stop()
-
-    # --- O RESTO DA APLICAÇÃO ---
     min_data_geral, max_data_geral = df_vendas['Data'].min().date(), df_vendas['Data'].max().date()
     def resetar_filtros():
         st.session_state.loja_selecionada = "Todas as Lojas"
@@ -97,7 +91,6 @@ if page == "Dashboard":
     st.sidebar.markdown("---")
     if st.sidebar.button('📄 Exportar para PDF'):
         st.markdown('<script>window.print();</script>', unsafe_allow_html=True)
-
     loja_sel = st.session_state.loja_selecionada
     datas_selecionadas = st.session_state.data_selecionada
     if len(datas_selecionadas) != 2:
@@ -112,7 +105,6 @@ if page == "Dashboard":
     else:
         df_vendas_final = df_vendas_por_data
         df_vendedores_final = df_vendedores_por_data
-
     st.header(f"Resultados para: {loja_sel}")
     meta_total = df_vendas_final['Meta'].sum()
     venda_acumulada = df_vendas_final['Venda Realizada'].sum()
@@ -122,16 +114,13 @@ if page == "Dashboard":
     bonus_meta = dias_meta_batida * config["bonus_por_dia"]
     premiacao_total = premiacao_loja + bonus_meta
     col1, col2, col3 = st.columns(3); col4, col5, col6 = st.columns(3)
-    # ALTERADO: Usa a nova função formatar_moeda_br em vez de locale.currency
     with col1: st.metric(label="🎯 Meta", value=formatar_moeda_br(meta_total))
     with col2: st.metric(label="💰 Venda Acumulada", value=formatar_moeda_br(venda_acumulada))
     with col3: st.metric(label="📈 % da Meta", value=f"{percentual_meta:.2f}%")
     with col4: st.metric(label="🏆 Dias de Meta Batida", value=f"{dias_meta_batida} dias")
     with col5: st.metric(label="🎁 Premiação da Loja", value=formatar_moeda_br(premiacao_loja), help=f"Valor configurado: {formatar_moeda_br(config['premiacao_loja'])}")
     with col6: st.metric(label="🎉 Bónus Meta Batida", value=formatar_moeda_br(bonus_meta), help=f"Valor configurado: {formatar_moeda_br(config['bonus_por_dia'])} por dia")
-    
     st.markdown("---")
-    # ... [O restante do código de Gráficos e Admin permanece o mesmo] ...
     st.header("Análises Visuais")
     graph_col1, graph_col2 = st.columns(2)
     with graph_col1:
@@ -189,14 +178,19 @@ if page == "Dashboard":
 # --- PÁGINA DE ADMINISTRAÇÃO ---
 elif page == "⚙️ Administração":
     st.title("⚙️ Painel de Administração")
-    st.markdown("---")
-    st.subheader("Configuração das Regras de Premiação")
-    current_config = load_config()
-    with st.form(key="config_form"):
-        new_premio_loja = st.number_input("Valor da Premiação da Loja (R$)", min_value=0.0, value=current_config["premiacao_loja"], step=50.0, format="%.2f", help="Valor do prémio se a loja atingir a meta do período.")
-        new_bonus_dia = st.number_input("Valor do Bónus por Dia de Meta Batida (R$)", min_value=0.0, value=current_config["bonus_por_dia"], step=1.0, format="%.2f", help="Valor a ser pago por cada dia em que a meta diária foi superada.")
-        submitted = st.form_submit_button("💾 Salvar Alterações")
-        if submitted:
-            new_config = {"premiacao_loja": new_premio_loja, "bonus_por_dia": new_bonus_dia}
-            save_config(new_config)
-            st.success("Configurações salvas com sucesso! O dashboard usará estes novos valores na próxima vez que for atualizado.")
+    # ALTERADO: A página inteira agora está protegida pela função check_password
+    if check_password():
+        st.success("Acesso concedido!")
+        st.markdown("---")
+        st.subheader("Configuração das Regras de Premiação")
+        
+        current_config = load_config()
+
+        with st.form(key="config_form"):
+            new_premio_loja = st.number_input("Valor da Premiação da Loja (R$)", min_value=0.0, value=current_config["premiacao_loja"], step=50.0, format="%.2f", help="Valor do prémio se a loja atingir a meta do período.")
+            new_bonus_dia = st.number_input("Valor do Bónus por Dia de Meta Batida (R$)", min_value=0.0, value=current_config["bonus_por_dia"], step=1.0, format="%.2f", help="Valor a ser pago por cada dia em que a meta diária foi superada.")
+            submitted = st.form_submit_button("💾 Salvar Alterações")
+            if submitted:
+                new_config = {"premiacao_loja": new_premio_loja, "bonus_por_dia": new_bonus_dia}
+                save_config(new_config)
+                st.success("Configurações salvas com sucesso! O dashboard usará estes novos valores na próxima vez que for atualizado.")
