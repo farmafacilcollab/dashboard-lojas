@@ -19,9 +19,18 @@ except locale.Error:
     except locale.Error:
         st.warning("Não foi possível definir o local para Português (pt_BR).")
 
-# --- FUNÇÕES DE CONFIGURAÇÃO E SEGURANÇA ---
+# --- FUNÇÕES DE CONFIGURAÇÃO, SEGURANÇA E FORMATAÇÃO ---
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {"premiacao_loja": 1000.0, "bonus_por_dia": 25.0}
+
+# ADICIONADO NOVAMENTE: Função para formatar moeda, corrigindo o NameError
+def formatar_moeda_br(valor):
+    """Formata um número para o padrão de moeda brasileiro (R$ 1.234,50)."""
+    if valor is None:
+        valor = 0.0
+    valor_formatado = f"{valor:,.2f}"
+    valor_formatado = valor_formatado.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {valor_formatado}"
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -31,17 +40,13 @@ def load_config():
 def save_config(config_data):
     with open(CONFIG_FILE, 'w') as f: json.dump(config_data, f, indent=4)
 
-# REINTRODUZIDO: Função para verificar a senha
 def check_password():
     """Mostra o formulário de senha e retorna True se a senha estiver correta."""
     st.header("🔑 Acesso Restrito")
     password = st.text_input("Digite a senha de administrador:", type="password")
-
-    # Verifica se a senha corresponde à guardada no st.secrets
     if "admin_password" not in st.secrets:
         st.error("Senha de administrador não configurada no ficheiro secrets.toml.")
         return False
-        
     if password == st.secrets.get("admin_password"):
         return True
     elif password:
@@ -60,7 +65,13 @@ if page == "Dashboard":
     # ... [O código do Dashboard permanece exatamente o mesmo] ...
     st.title("📊 Dashboard de Vendas Interativo")
     with st.expander("ℹ️ Ajuda e Detalhes do Dashboard", expanded=False):
-        st.markdown("""...""")
+        st.markdown("""
+        **Como usar este painel:**
+        - **1. Fonte de Dados:** A aplicação lê os dados automaticamente da sua Planilha Google configurada.
+        - **2. Aplique os Filtros:** Na barra lateral, pode filtrar os dados por Loja e por um período de Data. Use o botão 'Resetar Filtros' para voltar ao estado inicial.
+        - **3. Análise Interativa:** Todos os cartões de KPI e gráficos são atualizados automaticamente com base nos seus filtros.
+        - **4. Exporte os Dados:** Abaixo dos gráficos, encontrará um botão para baixar os dados filtrados em Excel. Para exportar para PDF, use o botão na barra lateral.
+        """)
     st.markdown("""<style>@media print{...}</style>""", unsafe_allow_html=True)
     st.markdown("---")
     with st.spinner("A conectar com a Planilha Google e a carregar os dados..."):
@@ -178,14 +189,12 @@ if page == "Dashboard":
 # --- PÁGINA DE ADMINISTRAÇÃO ---
 elif page == "⚙️ Administração":
     st.title("⚙️ Painel de Administração")
-    # ALTERADO: A página inteira agora está protegida pela função check_password
     if check_password():
         st.success("Acesso concedido!")
         st.markdown("---")
         st.subheader("Configuração das Regras de Premiação")
         
         current_config = load_config()
-
         with st.form(key="config_form"):
             new_premio_loja = st.number_input("Valor da Premiação da Loja (R$)", min_value=0.0, value=current_config["premiacao_loja"], step=50.0, format="%.2f", help="Valor do prémio se a loja atingir a meta do período.")
             new_bonus_dia = st.number_input("Valor do Bónus por Dia de Meta Batida (R$)", min_value=0.0, value=current_config["bonus_por_dia"], step=1.0, format="%.2f", help="Valor a ser pago por cada dia em que a meta diária foi superada.")
