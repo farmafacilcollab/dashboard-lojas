@@ -11,18 +11,28 @@ from streamlit_gsheets import GSheetsConnection
 
 # --- CONFIGURAÇÃO DA PÁGINA E LOCALE ---
 st.set_page_config(page_title="Dashboard de Vendas Interativo", page_icon="📊", layout="wide")
+
+# ALTERADO: Bloco de locale robusto para funcionar tanto localmente (Windows) quanto na nuvem (Linux)
 try:
+    # Padrão para Linux (usado no Streamlit Cloud)
     locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
-except:
-    locale.setlocale(locale.LC_ALL, 'Portuguese_Brazil')
+except locale.Error:
+    try:
+        # Padrão para Windows (usado localmente)
+        locale.setlocale(locale.LC_ALL, 'Portuguese_Brazil')
+    except locale.Error:
+        # Se ambos falharem, avisa o utilizador e continua com o locale padrão do sistema
+        st.warning("Não foi possível definir o local para Português (pt_BR). A formatação de moeda pode aparecer no padrão americano.")
 
 # --- FUNÇÕES DE CONFIGURAÇÃO (para regras de negócio) ---
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {"premiacao_loja": 1000.0, "bonus_por_dia": 25.0}
+
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'w') as f: json.dump(DEFAULT_CONFIG, f, indent=4)
     with open(CONFIG_FILE, 'r') as f: return json.load(f)
+
 def save_config(config_data):
     with open(CONFIG_FILE, 'w') as f: json.dump(config_data, f, indent=4)
 
@@ -34,34 +44,41 @@ config = load_config()
 # --- PÁGINA DO DASHBOARD ---
 if page == "Dashboard":
     st.title("📊 Dashboard de Vendas Interativo")
-    # ... [O resto do código de UI, filtros, etc. permanece o mesmo] ...
     with st.expander("ℹ️ Ajuda e Detalhes do Dashboard", expanded=False):
-        st.markdown("""...""")
-    st.markdown("""<style>@media print{...}</style>""", unsafe_allow_html=True)
+        st.markdown("""
+        **Como usar este painel:**
+        - **1. Fonte de Dados:** A aplicação lê os dados automaticamente da sua Planilha Google configurada.
+        - **2. Aplique os Filtros:** Na barra lateral, pode filtrar os dados por Loja e por um período de Data. Use o botão 'Resetar Filtros' para voltar ao estado inicial.
+        - **3. Análise Interativa:** Todos os cartões de KPI e gráficos são atualizados automaticamente com base nos seus filtros.
+        - **4. Exporte os Dados:** Abaixo dos gráficos, encontrará um botão para baixar os dados filtrados em Excel. Para exportar para PDF, use o botão na barra lateral.
+        """)
+    st.markdown("""
+    <style>
+    @media print {
+        .stSidebar, [data-testid="stToolbar"], footer, .stExpander, .stSlider, .stButton { display: none !important; }
+        .main .block-container { padding: 2rem !important; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
     st.markdown("---")
 
-    # --- CARREGAMENTO AUTOMÁTICO DOS DADOS (VERSÃO CORRIGIDA COM URL) ---
+    # --- CARREGAMENTO AUTOMÁTICO DOS DADOS ---
     with st.spinner("A conectar com a Planilha Google e a carregar os dados..."):
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
-            
-            # ALTERADO: O nome da planilha (spreadsheet) agora é lido automaticamente
-            # do secrets.toml (usando o URL), então só precisamos especificar a aba (worksheet).
             df_vendas = conn.read(worksheet="LOJAS", usecols=list(range(4)), ttl="10m")
             df_vendedores = conn.read(worksheet="VENDEDORES", usecols=list(range(4)), ttl="10m")
-
             df_vendas.dropna(how="all", inplace=True)
             df_vendedores.dropna(how="all", inplace=True)
             df_vendas['Data'] = pd.to_datetime(df_vendas['Data'])
             df_vendedores['Data'] = pd.to_datetime(df_vendedores['Data'])
-
         except Exception as e:
             st.error(f"❌ Erro ao conectar ou ler a Planilha Google.")
             st.error("Verifique se o URL em 'secrets.toml' está correto e se a planilha foi partilhada com o email da conta de serviço.")
             st.exception(e)
             st.stop()
-    
-    # --- O RESTO DA APLICAÇÃO CONTINUA EXATAMENTE IGUAL ---
+
+    # --- O RESTO DA APLICAÇÃO ---
     min_data_geral, max_data_geral = df_vendas['Data'].min().date(), df_vendas['Data'].max().date()
     def resetar_filtros():
         st.session_state.loja_selecionada = "Todas as Lojas"
