@@ -3,26 +3,29 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import date
-import locale
+# import locale -> REMOVIDO: Não vamos mais usar esta biblioteca
 import io
 import json
 import os
 from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURAÇÃO DA PÁGINA E LOCALE ---
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Dashboard de Vendas Interativo", page_icon="📊", layout="wide")
 
-# ALTERADO: Bloco de locale robusto para funcionar tanto localmente (Windows) quanto na nuvem (Linux)
-try:
-    # Padrão para Linux (usado no Streamlit Cloud)
-    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
-except locale.Error:
-    try:
-        # Padrão para Windows (usado localmente)
-        locale.setlocale(locale.LC_ALL, 'Portuguese_Brazil')
-    except locale.Error:
-        # Se ambos falharem, avisa o utilizador e continua com o locale padrão do sistema
-        st.warning("Não foi possível definir o local para Português (pt_BR). A formatação de moeda pode aparecer no padrão americano.")
+# NOVO: Função própria para formatar moeda, que não depende do sistema operativo
+def formatar_moeda_br(valor):
+    """Formata um número para o padrão de moeda brasileiro (R$ 1.234,50)."""
+    if valor is None:
+        valor = 0.0
+    # Formata com separador de milhar americano (,) e duas casas decimais (.)
+    valor_formatado = f"{valor:,.2f}"
+    # Troca temporariamente a vírgula por um placeholder
+    valor_formatado = valor_formatado.replace(",", "X")
+    # Troca o ponto decimal por uma vírgula
+    valor_formatado = valor_formatado.replace(".", ",")
+    # Troca o placeholder pelo ponto de milhar
+    valor_formatado = valor_formatado.replace("X", ".")
+    return f"R$ {valor_formatado}"
 
 # --- FUNÇÕES DE CONFIGURAÇÃO (para regras de negócio) ---
 CONFIG_FILE = "config.json"
@@ -119,13 +122,16 @@ if page == "Dashboard":
     bonus_meta = dias_meta_batida * config["bonus_por_dia"]
     premiacao_total = premiacao_loja + bonus_meta
     col1, col2, col3 = st.columns(3); col4, col5, col6 = st.columns(3)
-    with col1: st.metric(label="🎯 Meta", value=locale.currency(meta_total, grouping=True))
-    with col2: st.metric(label="💰 Venda Acumulada", value=locale.currency(venda_acumulada, grouping=True))
+    # ALTERADO: Usa a nova função formatar_moeda_br em vez de locale.currency
+    with col1: st.metric(label="🎯 Meta", value=formatar_moeda_br(meta_total))
+    with col2: st.metric(label="💰 Venda Acumulada", value=formatar_moeda_br(venda_acumulada))
     with col3: st.metric(label="📈 % da Meta", value=f"{percentual_meta:.2f}%")
     with col4: st.metric(label="🏆 Dias de Meta Batida", value=f"{dias_meta_batida} dias")
-    with col5: st.metric(label="🎁 Premiação da Loja", value=locale.currency(premiacao_loja, grouping=True), help=f"Valor configurado: {locale.currency(config['premiacao_loja'], grouping=True)}")
-    with col6: st.metric(label="🎉 Bónus Meta Batida", value=locale.currency(bonus_meta, grouping=True), help=f"Valor configurado: {locale.currency(config['bonus_por_dia'], grouping=True)} por dia")
+    with col5: st.metric(label="🎁 Premiação da Loja", value=formatar_moeda_br(premiacao_loja), help=f"Valor configurado: {formatar_moeda_br(config['premiacao_loja'])}")
+    with col6: st.metric(label="🎉 Bónus Meta Batida", value=formatar_moeda_br(bonus_meta), help=f"Valor configurado: {formatar_moeda_br(config['bonus_por_dia'])} por dia")
+    
     st.markdown("---")
+    # ... [O restante do código de Gráficos e Admin permanece o mesmo] ...
     st.header("Análises Visuais")
     graph_col1, graph_col2 = st.columns(2)
     with graph_col1:
